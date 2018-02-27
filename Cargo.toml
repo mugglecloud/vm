@@ -1,0 +1,13 @@
+[package]
+name = "turbofan"
+version = "0.1.0"
+authors = ["thebigbrain <379565986@qq.com>"]
+
+[profile.dev]
+opt-level = 0
+
+[profile.release]
+opt-level = 3
+
+[dependencies]
+rand = "0.4.2"
