@@ -8,17 +8,17 @@ pub struct SectionEntries<T> {
 #[derive(Debug)]
 pub enum SectionType {
     Custom,
-    Type(SectionEntries<wasm_types::FuncType>),
-    Import(SectionEntries<ImportEntry>),
-    Function(FunctionSection),
-    Table(SectionEntries<wasm_types::TableType>),
-    Memory(SectionEntries<wasm_types::MemoryType>),
-    Global(SectionEntries<GlobalVariable>),
-    Export(SectionEntries<ExportEntry>),
-    Start(StartSection),
-    Element(SectionEntries<ElemSegment>),
-    Code(SectionEntries<FunctionBody>),
-    Data(SectionEntries<DataSegment>),
+    Type,
+    Import,
+    Function,
+    Table,
+    Memory,
+    Global,
+    Export,
+    Start,
+    Element,
+    Code,
+    Data,
 }
 
 #[derive(Debug)]

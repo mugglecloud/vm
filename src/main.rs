@@ -22,7 +22,7 @@ fn main() {
     let mut decoder = WasmModuleDecoder::new(&contents);
     decoder.decode_module_header();
     
-    println!("{:?}", decoder.decode_section());
+    decoder.decode_section();
 
     println!("{:?}", decoder.module());
 }
