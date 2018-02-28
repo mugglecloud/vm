@@ -2,18 +2,31 @@ use wasm::wasm_module::WasmModule;
 use std::mem;
 
 #[derive(Debug)]
-pub struct WasmModuleDecoder {
-    module: WasmModule,
-    pos: usize,
-    size: usize,
+enum _DataTypes {
+    Uint8,
+    Uint16,
+    Uint32,
+    Varuint1,
+    Varuint7,
+    Varuint32,
+    Varint7,
+    Varint32,
+    Varint64,
 }
 
-impl WasmModuleDecoder {
-    pub fn new() -> WasmModuleDecoder {
+#[derive(Debug)]
+pub struct WasmModuleDecoder<'a> {
+    module: WasmModule,
+    pos: usize,
+    bytes: &'a Vec<u8>,
+}
+
+impl<'a> WasmModuleDecoder<'a> {
+    pub fn new(bytes: &Vec<u8>) -> WasmModuleDecoder {
         WasmModuleDecoder { 
             module: WasmModule::new(),
             pos: 0,
-            size: 0,
+            bytes: bytes
         }
     }
 
@@ -21,56 +34,41 @@ impl WasmModuleDecoder {
         self.module
     }
 
-    pub fn decode_module_header(&mut self, bytes: Box<Vec<u8>>) {
-        self.size = bytes.len();
+    pub fn decode_module_header(&mut self) {
         let module: &mut WasmModule = &mut self.module;
-        module.magic_number = read_byte_sequence_u32(&bytes, self.pos);
+        module.magic_number = read_byte_sequence_u32(self.bytes, self.pos);
         self.pos += 4;
-        module.version = read_byte_sequence_u32(&bytes, self.pos);
+        module.version = read_byte_sequence_u32(self.bytes, self.pos);
         self.pos += 4;
     }
 
-    pub fn decode_section() {
-
+    pub fn decode_section(&mut self) -> u8 {
+        let id: u8 = decode_leb128(self.bytes, self.pos, false) as u8;
+        self.pos += 1;
+        id
     }
 }
 
-#[derive(Debug)]
-enum _ByteSquence {
-    U32,
-    U64,
-    Str,
-}
-
-fn leb128_remove_sign_extend(b: u8) -> u8 {
-    let mut shift = 2;
-    let sign = b & 0x40;
-    while (b << shift) & 0x80 == sign {
-        shift += 1;
-    }
-}
-
-pub fn decode_leb128(bytes: &Box<Vec<u8>>, pos: usize, signed: bool) -> u64 {
+pub fn decode_leb128<'a>(bytes: &'a Vec<u8>, pos: usize, signed: bool) -> u64 {
     let mut index = pos;
     let mut result: u64 = 0;
     let mut shift: u8 = 0;
-    while true {
-        let mut b: u8 = bytes[index];
+    loop {
+        let b: u8 = bytes[index];
+        result |= ((b & 0x7f) << shift) as u64;
+        shift += 7;
         if b & 0x80 == 0 {
-            if signed {
-                b = leb128_remove_sign_extend(b);
-            }
-            result |= (b & 0x7f) << shift;
             break;
         }
-        result |= (b & 0x7f) << shift;
         index += 1;
-        shift += 7;
+    }
+    if signed && shift < 64 {
+        result |= !(0 as u64) << shift;
     }
     result
 }
 
-fn _read_little_endian(bytes: &Box<Vec<u8>>, pos: usize, num: usize) -> Vec<u8> {
+fn _read_little_endian<'a>(bytes: &'a Vec<u8>, pos: usize, num: usize) -> Vec<u8> {
     let mut index = pos;
     let mut done = false;
     let mut a: Vec<u8> = Vec::new();
@@ -86,7 +84,7 @@ fn _read_little_endian(bytes: &Box<Vec<u8>>, pos: usize, num: usize) -> Vec<u8> 
     a
 }
 
-fn read_byte_sequence_u32(bytes: &Box<Vec<u8>>, pos: usize) -> u32 {
+fn read_byte_sequence_u32<'a>(bytes: &'a Vec<u8>, pos: usize) -> u32 {
     let a = [bytes[pos], bytes[pos + 1], bytes[pos + 2], bytes[pos + 3]];
     unsafe {
         mem::transmute::<[u8; 4], u32>(a)

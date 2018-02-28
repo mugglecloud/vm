@@ -19,12 +19,10 @@ fn main() {
 
     println!("read {} bytes", size);
 
-    let mut decoder = WasmModuleDecoder::new();
-    let bytes: Box<Vec<u8>> = Box::new(contents);
-    decoder.decode_module_header(bytes);
-    let module = decoder.module();
+    let mut decoder = WasmModuleDecoder::new(&contents);
+    decoder.decode_module_header();
+    
+    println!("{:?}", decoder.decode_section());
 
-    println!("{:?}", module);
-
-    println!("{:?} {}", 0x7f & 0x82, 0x01 << 8);
+    println!("{:?}", decoder.module());
 }
