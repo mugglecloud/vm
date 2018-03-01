@@ -25,7 +25,7 @@ pub enum SectionType {
 pub struct Section {
     id: u8,
     name: String,
-    payload: SectionType,
+    payload: Vec<u8>,
 }
 
 #[derive(Debug)]

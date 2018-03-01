@@ -57,32 +57,62 @@ impl<'a> WasmModuleDecoder<'a> {
     }
 
     pub fn decode_section(&mut self) {
-        let section_code = self.decode_section_code();
-        self.decode_section_payload_len();
+        let section_code = decode_section_code(self.bytes, &mut self.pos);
+        let payload_len = decode_section_payload_len(self.bytes, &mut self.pos) as usize;
 
-        match section_code {
-            Some(&SectionType::Custom) => println!("found custom section"),
-            Some(&SectionType::Type) => println!("found type section"),
-            None => panic!("Invalid section code {:?}", section_code),
-            _ => println!("found other section"),
-        };
-    }
-
-    fn decode_section_code(&mut self) -> Option<&SectionType> {
-        let id: usize = decode_leb128(self.bytes, &mut self.pos, false) as usize;
-        SECTION_CODE_TO_TYPE.get(id)
-    }
-
-    fn decode_section_payload_len(&mut self) -> u32{
-        let payload_len: u32 = decode_leb128(self.bytes, &mut self.pos, false) as u32;
         println!("section payload_len {:?}", payload_len);
-        payload_len
-    }
 
-    fn decode_section_name_len(&mut self) -> u32 {
-        let name_len: u32 = decode_leb128(self.bytes, &mut self.pos, false) as u32;
-        name_len
+        let payload = match section_code {
+            Some(&SectionType::Custom) => decode_custom(self.bytes, &mut self.pos, payload_len),
+            Some(&SectionType::Type) => decode_type(self.bytes, &mut self.pos, payload_len),
+            _ => Vec::new(),
+        };
+
+        println!("payload {:?}", payload);
     }
+}
+
+fn decode_custom<'a>(bytes: &'a Vec<u8>, pos: &mut usize, payload_len: usize) -> Vec<u8> {
+    let (name_size, name) = decode_section_name(bytes, pos);
+    print!("section name {:?}, consume {:?}", name, name_size);
+    decode_section_payload(bytes, pos, payload_len - name_size)
+}
+
+fn decode_type<'a>(bytes: &'a Vec<u8>, pos: &mut usize, payload_len: usize) -> Vec<u8> {
+    decode_section_payload(bytes, pos, payload_len)
+}
+
+pub fn decode_section_code<'a>(bytes: &'a Vec<u8>, pos: &mut usize) -> Option<&'a SectionType> {
+    let id = decode_leb128(bytes, pos, false) as usize;
+    SECTION_CODE_TO_TYPE.get(id)
+}
+
+pub fn decode_section_payload_len<'a>(bytes: &'a Vec<u8>, pos: &mut usize) -> u32 {
+    let payload_len = decode_leb128(bytes, pos, false);
+    payload_len as u32
+}
+
+pub fn decode_section_name<'a>(bytes: &'a Vec<u8>, pos: &mut usize) -> (usize, String) {
+    let start = *pos;
+    let mut name_len = decode_leb128(bytes, pos, false);
+    let mut name = String::new();
+    while name_len > 0 {
+        name.push(bytes[*pos] as char);
+        *pos += 1;
+        name_len -= 1;
+    }
+    (*pos - start, name)
+}
+
+pub fn decode_section_payload<'a>(bytes: &'a Vec<u8>, pos: &mut usize, size: usize) -> Vec<u8> {
+    let mut len = size;
+    let mut payload: Vec<u8> = Vec::new();
+    while len > 0 {
+        payload.push(bytes[*pos]);
+        *pos += 1;
+        len -= 1;
+    }
+    payload
 }
 
 pub fn decode_leb128<'a>(bytes: &'a Vec<u8>, pos: &mut usize, signed: bool) -> u64 {
@@ -109,21 +139,4 @@ fn read_byte_sequence_u32<'a>(bytes: &'a Vec<u8>, pos: &mut usize) -> u32 {
     unsafe {
         mem::transmute::<[u8; 4], u32>(a)
     }
-}
-
-// will be removed
-fn _read_little_endian<'a>(bytes: &'a Vec<u8>, pos: usize, num: usize) -> Vec<u8> {
-    let mut index = pos;
-    let mut done = false;
-    let mut a: Vec<u8> = Vec::new();
-    let end = pos + num;
-    while !done {
-        let b = bytes[index];
-        a.push(b);
-        index += 1;
-        if index == end {
-            done = true;
-        }
-    }
-    a
 }
