@@ -18,6 +18,12 @@ const SECTION_DECODERS: [SectionDecoderType; 12] = [
     section_decoder::decode_data,
 ];
 
+fn function generate_decoder(code) -> Box<Fn(&Vec<u8>, usize) -> SectionPayload> {
+    match code {
+        0 => 
+    }
+}
+
 #[derive(Debug)]
 pub struct SectionEntries<T> {
     entries: Vec<T>,
