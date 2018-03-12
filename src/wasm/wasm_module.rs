@@ -1,13 +1,14 @@
+use std::collections::HashMap;
+
 const WASM_MAGIC_NUMBER: u32 = 0x6d736100;
 const WASM_VERSION: u32 = 0x01;
 
-use wasm::wasm_section::Section;
+use wasm::wasm_section;
 
-#[derive(Debug)]
 pub struct WasmModule {
     pub magic_number: u32,
     pub version: u32,
-    pub sections: Vec<Section>,
+    pub sections: HashMap<u8, wasm_section::Section>,
 }
 
 impl WasmModule {
@@ -15,7 +16,7 @@ impl WasmModule {
         WasmModule { 
             magic_number: WASM_MAGIC_NUMBER,
             version: WASM_VERSION,
-            sections: Vec::new()
+            sections: HashMap::new()
         }
     }
 }

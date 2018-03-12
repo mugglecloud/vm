@@ -1,136 +1,125 @@
-use wasm::wasm_module::WasmModule;
-use wasm::wasm_section::SectionType;
+// use std::thread;
 use std::mem;
+// use std::sync::RwLock;
+use std::sync::Arc;
+use std::time::{ Instant };
 
-static SECTION_CODE_TO_TYPE: [SectionType; 12] = [
-    SectionType::Custom,
-    SectionType::Type,
-    SectionType::Import,
-    SectionType::Function,
-    SectionType::Table,
-    SectionType::Memory,
-    SectionType::Global,
-    SectionType::Export,
-    SectionType::Start,
-    SectionType::Element,
-    SectionType::Code,
-    SectionType::Data,
-];
+use wasm::wasm_module::WasmModule;
+// use wasm::wasm_section::SectionType;
+use wasm::wasm_section::Section;
+// use wasm::section_decoder;
+// use wasm::wasm_section::SectionPayload;
 
-#[derive(Debug)]
-enum _DataTypes {
-    Uint8,
-    Uint16,
-    Uint32,
-    Varuint1,
-    Varuint7,
-    Varuint32,
-    Varint7,
-    Varint32,
-    Varint64,
-}
+use share::leb128::decode_leb128;
+// use share::thread_pool::ThreadPool;
 
-#[derive(Debug)]
-pub struct WasmModuleDecoder<'a> {
+pub struct WasmModuleDecoder {
     module: WasmModule,
     pos: usize,
-    bytes: &'a Vec<u8>,
+    bytes: Arc<Vec<u8>>,
+    // thread_pool: ThreadPool,
 }
 
-impl<'a> WasmModuleDecoder<'a> {
-    pub fn new(bytes: &Vec<u8>) -> WasmModuleDecoder {
+impl WasmModuleDecoder {
+    pub fn new(bytes: Vec<u8>) -> WasmModuleDecoder {
         WasmModuleDecoder { 
             module: WasmModule::new(),
             pos: 0,
-            bytes: bytes
+            bytes: Arc::new(bytes)
         }
     }
 
     pub fn module(self) -> WasmModule {
         self.module
     }
+    
+    pub fn offset(&self) -> usize {
+        self.pos
+    }
 
     pub fn decode_module_header(&mut self) {
         let module: &mut WasmModule = &mut self.module;
-        module.magic_number = read_byte_sequence_u32(self.bytes, &mut self.pos);
-        module.version = read_byte_sequence_u32(self.bytes, &mut self.pos);
+        let magic_number = read_byte_sequence_u32(&self.bytes, &mut self.pos);
+        if module.magic_number != magic_number {
+            panic!("invalid magic number {:?}", magic_number);
+        }
+        module.version = read_byte_sequence_u32(&self.bytes, &mut self.pos);
     }
 
     pub fn decode_section(&mut self) {
-        let section_code = decode_section_code(self.bytes, &mut self.pos);
-        let payload_len = decode_section_payload_len(self.bytes, &mut self.pos) as usize;
+        let size = self.bytes.len();
 
-        println!("section payload_len {:?}", payload_len);
+        let now = Instant::now();
+        loop {
+            if self.pos == size {
+                break;
+            }
+            let section = self.get_section();
 
-        let payload = match section_code {
-            Some(&SectionType::Custom) => decode_custom(self.bytes, &mut self.pos, payload_len),
-            Some(&SectionType::Type) => decode_type(self.bytes, &mut self.pos, payload_len),
-            _ => Vec::new(),
-        };
+            self.module.sections.insert(section.section_code, section);
+        }
+        println!("decode section meta: time elaspsed {:?}μs", now.elapsed().subsec_nanos() / 1000);
 
-        println!("payload {:?}", payload);
+        let now = Instant::now();
+        self.decode_payload();
+        println!("decode section: time elaspsed {:?}μs", now.elapsed().subsec_nanos() / 1000);
     }
-}
 
-fn decode_custom<'a>(bytes: &'a Vec<u8>, pos: &mut usize, payload_len: usize) -> Vec<u8> {
-    let (name_size, name) = decode_section_name(bytes, pos);
-    print!("section name {:?}, consume {:?}", name, name_size);
-    decode_section_payload(bytes, pos, payload_len - name_size)
-}
-
-fn decode_type<'a>(bytes: &'a Vec<u8>, pos: &mut usize, payload_len: usize) -> Vec<u8> {
-    decode_section_payload(bytes, pos, payload_len)
-}
-
-pub fn decode_section_code<'a>(bytes: &'a Vec<u8>, pos: &mut usize) -> Option<&'a SectionType> {
-    let id = decode_leb128(bytes, pos, false) as usize;
-    SECTION_CODE_TO_TYPE.get(id)
-}
-
-pub fn decode_section_payload_len<'a>(bytes: &'a Vec<u8>, pos: &mut usize) -> u32 {
-    let payload_len = decode_leb128(bytes, pos, false);
-    payload_len as u32
-}
-
-pub fn decode_section_name<'a>(bytes: &'a Vec<u8>, pos: &mut usize) -> (usize, String) {
-    let start = *pos;
-    let mut name_len = decode_leb128(bytes, pos, false);
-    let mut name = String::new();
-    while name_len > 0 {
-        name.push(bytes[*pos] as char);
-        *pos += 1;
-        name_len -= 1;
-    }
-    (*pos - start, name)
-}
-
-pub fn decode_section_payload<'a>(bytes: &'a Vec<u8>, pos: &mut usize, size: usize) -> Vec<u8> {
-    let mut len = size;
-    let mut payload: Vec<u8> = Vec::new();
-    while len > 0 {
-        payload.push(bytes[*pos]);
-        *pos += 1;
-        len -= 1;
-    }
-    payload
-}
-
-pub fn decode_leb128<'a>(bytes: &'a Vec<u8>, pos: &mut usize, signed: bool) -> u64 {
-    let mut result: u64 = 0;
-    let mut shift: u8 = 0;
-    loop {
-        let b: u8 = bytes[*pos];
-        result |= ((b & 0x7f) << shift) as u64;
-        shift += 7;
-        *pos += 1;
-        if b & 0x80 == 0 {
-            break;
+    pub fn decode_payload (&mut self) {
+        // let (tx, rx) = mpsc::channel();
+        let sections = &mut self.module.sections;
+        for (_, s) in sections {
+            // let b = Arc::clone(&self.bytes);
+            // let b = &self.bytes;
+            s.decode(&self.bytes);
+            
+            // println!("section {:?}", s.section_code);
         }
     }
-    if signed && shift < 64 {
-        result |= !(0 as u64) << shift;
+
+    fn get_section(&mut self) -> Section {
+        let section_code = self.decode_section_code();
+        let payload_len = self.decode_section_payload_len() as usize;
+        let start = self.pos;
+
+        let mut section_name: String = String::new();
+
+        if section_code == 0 {
+            // custom section
+            section_name = self.decode_custom();
+        }
+        let offset = self.pos;
+        self.pos = start + payload_len;
+
+
+        Section::new(section_code, section_name, offset, payload_len)
     }
-    result
+
+    fn decode_custom(&mut self) -> String {
+        let (_, name) = self.decode_section_name();
+        name
+    }
+
+    fn decode_section_code(&mut self) -> u8 {
+        decode_leb128(&self.bytes, &mut self.pos, false) as u8
+    }
+
+    fn decode_section_payload_len(&mut self) -> u32 {
+        let payload_len = decode_leb128(&self.bytes, &mut self.pos, false);
+        payload_len as u32
+    }
+
+    fn decode_section_name(&mut self) -> (usize, String) {
+        let start = self.pos;
+        let bytes = &self.bytes;
+        let name_len = decode_leb128(bytes, &mut self.pos, false) as usize;
+        let mut name = String::with_capacity(name_len);
+        for i in 0..name_len {
+            name.push(bytes[start + i] as char);
+        }
+        self.pos += name_len;
+        (name_len, name)
+    }
 }
 
 fn read_byte_sequence_u32<'a>(bytes: &'a Vec<u8>, pos: &mut usize) -> u32 {
@@ -140,3 +129,4 @@ fn read_byte_sequence_u32<'a>(bytes: &'a Vec<u8>, pos: &mut usize) -> u32 {
         mem::transmute::<[u8; 4], u32>(a)
     }
 }
+
